@@ -1,0 +1,382 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Tower of Hanoi — Pastel Animation</title>
+  <style>
+    :root{--bg1:#f6f8fb;--bg2:#ffffff;--card:#fff;--muted:#6b7280;--accent:#7b9cff}
+    html,body{height:100%;margin:0;background:linear-gradient(180deg,var(--bg1),var(--bg2));font-family:Inter, ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial}
+    .wrap{min-height:100%;display:flex;align-items:center;justify-content:center;flex-direction:column;padding:28px}
+    .canvasWrap{padding:18px;background:linear-gradient(180deg,rgba(255,255,255,0.8),rgba(248,250,252,0.9));border-radius:14px;box-shadow:0 12px 30px rgba(18,30,70,0.08)}
+    canvas{display:block;border-radius:10px}
+    h1{font-weight:600;color:#233040;margin:8px 0}
+    p{margin:0;color:var(--muted);opacity:0.95}
+
+    .controls{display:flex;align-items:center;justify-content:space-between;width:900px;max-width:calc(100% - 40px);margin:12px 0}
+    .controls .left,.controls .right{display:flex;align-items:center;gap:8px}
+    select,input[type=range]{margin-left:8px}
+    button{background:#fff;border:1px solid #e6e9ef;padding:8px 12px;border-radius:8px;cursor:pointer;box-shadow:0 2px 6px rgba(20,30,60,0.04)}
+    button:hover{box-shadow:0 6px 18px rgba(20,30,60,0.08)}
+    .info{display:flex;flex-direction:column;text-align:right;color:var(--muted);font-size:13px}
+
+    @media (max-width:720px){
+      .controls{flex-direction:column;align-items:stretch;gap:8px}
+      .controls .right{justify-content:space-between}
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1 id="title">Tower of Hanoi — Pastel Animation</h1>
+    <p id="subtitle">Automatically plays the optimal solution</p>
+
+    <div class="controls">
+      <div class="left">
+        <label>Disks:
+          <select id="diskCount" aria-label="Number of disks">
+            <option>3</option>
+            <option selected>5</option>
+            <option>6</option>
+            <option>7</option>
+            <option>8</option>
+          </select>
+        </label>
+        <button id="resetBtn">Reset</button>
+        <button id="playPauseBtn">Play</button>
+        <button id="stepBtn">Step</button>
+      </div>
+      <div class="right">
+        <label>Speed:
+          <input id="speed" type="range" min="0.25" max="2" step="0.05" value="1">
+        </label>
+        <div class="info">
+          <div id="movesInfo">Move: 0 / 0</div>
+          <div id="optimal">Optimal: 0</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="canvasWrap">
+      <canvas id="c" width="900" height="420"></canvas>
+    </div>
+  </div>
+
+<script>
+(() => {
+  const canvas = document.getElementById('c');
+  const ctx = canvas.getContext('2d');
+
+  // Controls
+  const diskCountSel = document.getElementById('diskCount');
+  const resetBtn = document.getElementById('resetBtn');
+  const playPauseBtn = document.getElementById('playPauseBtn');
+  const stepBtn = document.getElementById('stepBtn');
+  const speedInput = document.getElementById('speed');
+  const movesInfo = document.getElementById('movesInfo');
+  const optimalInfo = document.getElementById('optimal');
+  const title = document.getElementById('title');
+  const subtitle = document.getElementById('subtitle');
+
+  // Hi-dpi support and responsive sizing
+  function fitCanvas() {
+    const maxW = 900;
+    // measure available inner width of the canvas wrapper so its padding is accounted for
+    const parent = canvas.parentElement;
+    const parentInnerWidth = parent ? parent.clientWidth : window.innerWidth;
+    const containerW = Math.min(maxW, parentInnerWidth);
+    canvas.style.width = containerW + 'px';
+    canvas.style.height = Math.round(containerW * 0.4666) + 'px'; // maintain ~900x420 ratio
+    const DPR = window.devicePixelRatio || 1;
+    const rect = canvas.getBoundingClientRect();
+    canvas.width = Math.floor(rect.width * DPR);
+    canvas.height = Math.floor(rect.height * DPR);
+    ctx.setTransform(DPR,0,0,DPR,0,0);
+  }
+  window.addEventListener('resize', () => { fitCanvas(); drawScene(); });
+  fitCanvas();
+
+  // Config (mutable)
+  let NUM_DISKS = parseInt(diskCountSel.value, 10) || 5;
+  const ROD_COUNT = 3;
+  const PADDING_X = 80;
+  let BASE_Y = 320; // recalculated below based on canvas height
+  const ROD_HEIGHT = 220;
+  const ROD_WIDTH = 12;
+  const DISK_HEIGHT = 28;
+  const MIN_DISK_WIDTH = 80;
+  const MAX_DISK_WIDTH = 320;
+
+  // Pastel palette
+  const COLORS = ['#FFB3C6','#C8A2FF','#B3FFE0','#FFF1B8','#B3D4FF'];
+
+  // Model
+  let rods = [[],[],[]];
+  let moves = [];
+  let currentMoveIndex = 0;
+  let playing = false;
+
+  function rodPositions() {
+    const w = parseInt(canvas.style.width,10);
+    const gap = (w - PADDING_X*2) / (ROD_COUNT - 1);
+    const xs = [];
+    for (let i=0;i<ROD_COUNT;i++) xs.push(PADDING_X + gap*i);
+    return xs;
+  }
+
+  function buildModel(n) {
+    NUM_DISKS = n;
+    rods = [[],[],[]];
+    for (let i = NUM_DISKS; i >= 1; i--) rods[0].push(i);
+    moves = [];
+    computeMoves(NUM_DISKS, 0, 2, 1);
+    currentMoveIndex = 0;
+    optimalInfo.textContent = 'Optimal: ' + ((1<<NUM_DISKS) - 1);
+    title.textContent = `Tower of Hanoi — Pastel Animation (${NUM_DISKS} disks)`;
+    updateMovesInfo();
+  }
+
+  function computeMoves(n, from, to, aux) {
+    if (n === 0) return;
+    computeMoves(n-1, from, aux, to);
+    moves.push({from, to});
+    computeMoves(n-1, aux, to, from);
+  }
+
+  // Drawing helpers
+  function drawRoundedRect(x,y,w,h,r,fillStyle,strokeStyle){
+    ctx.beginPath();
+    const r2 = Math.min(r, h/2, w/2);
+    ctx.moveTo(x + r2, y);
+    ctx.arcTo(x + w, y, x + w, y + h, r2);
+    ctx.arcTo(x + w, y + h, x, y + h, r2);
+    ctx.arcTo(x, y + h, x, y, r2);
+    ctx.arcTo(x, y, x + w, y, r2);
+    ctx.closePath();
+    if (fillStyle){ ctx.fillStyle = fillStyle; ctx.fill(); }
+    if (strokeStyle){ ctx.strokeStyle = strokeStyle; ctx.stroke(); }
+  }
+
+  function shade(hex, percent) {
+    const f = parseInt(hex.slice(1),16);
+    const t = percent < 0 ? 0 : 255;
+    const p = Math.abs(percent)/100;
+    const R = Math.round((t - (f>>16)) * p) + (f>>16);
+    const G = Math.round((t - ((f>>8)&0x00FF)) * p) + ((f>>8)&0x00FF);
+    const B = Math.round((t - (f&0x0000FF)) * p) + (f&0x0000FF);
+    return `rgb(${R},${G},${B})`;
+  }
+
+  function drawScene(moving) {
+    const w = parseInt(canvas.style.width,10);
+    const h = parseInt(canvas.style.height,10);
+    BASE_Y = Math.round(h * 0.76);
+    ctx.clearRect(0,0,w,h);
+
+    // Background subtle ground
+    ctx.fillStyle = 'rgba(20,30,50,0.02)';
+    ctx.fillRect(0, BASE_Y + 24, w, h - BASE_Y - 24);
+
+    // Draw base platform
+    drawRoundedRect(40, BASE_Y, w-80, 20, 8, '#efefef');
+
+    const xs = rodPositions();
+
+    // Draw rods
+    xs.forEach(x => {
+      drawRoundedRect(x - ROD_WIDTH/2, BASE_Y - ROD_HEIGHT, ROD_WIDTH, ROD_HEIGHT, ROD_WIDTH/2, '#dcdfe6');
+    });
+
+    // Draw disks per rod
+    for (let ri=0; ri<ROD_COUNT; ri++){
+      const stack = rods[ri];
+      for (let si=0; si<stack.length; si++){
+        const disk = stack[si];
+        if (moving && moving.disk === disk && moving.from === ri) continue;
+        const diskWidth = MIN_DISK_WIDTH + (disk-1)/Math.max(1,NUM_DISKS-1) * (MAX_DISK_WIDTH - MIN_DISK_WIDTH);
+        const x = xs[ri] - diskWidth/2;
+        const y = BASE_Y - 20 - (si+1) * DISK_HEIGHT;
+        const grad = ctx.createLinearGradient(x, y, x + diskWidth, y + DISK_HEIGHT);
+        const col = COLORS[(disk-1) % COLORS.length];
+        grad.addColorStop(0, shade(col, -8));
+        grad.addColorStop(0.5, col);
+        grad.addColorStop(1, shade(col, 6));
+        drawRoundedRect(x, y, diskWidth, DISK_HEIGHT - 4, 8, grad, 'rgba(0,0,0,0.06)');
+      }
+    }
+
+    if (moving && moving.obj){
+      const o = moving.obj;
+      const diskWidth = MIN_DISK_WIDTH + (o.size-1)/Math.max(1,NUM_DISKS-1) * (MAX_DISK_WIDTH - MIN_DISK_WIDTH);
+      const x = o.x - diskWidth/2;
+      const y = o.y;
+      const grad = ctx.createLinearGradient(x, y, x + diskWidth, y + DISK_HEIGHT);
+      const col = COLORS[(o.size-1) % COLORS.length];
+      grad.addColorStop(0, shade(col, -8));
+      grad.addColorStop(0.5, col);
+      grad.addColorStop(1, shade(col, 6));
+      drawRoundedRect(x, y, diskWidth, DISK_HEIGHT - 4, 8, grad, 'rgba(0,0,0,0.08)');
+    }
+  }
+
+  function easeInOutQuad(t){ return t<0.5 ? 2*t*t : -1 + (4-2*t)*t; }
+
+  function animateMove(move, speed=1) {
+    return new Promise(resolve => {
+      const from = move.from;
+      const to = move.to;
+      const disk = rods[from].pop();
+      const size = disk;
+      const xs = rodPositions();
+      const startX = xs[from];
+      const endX = xs[to];
+      const startStackHeight = rods[from].length;
+      const endStackHeight = rods[to].length;
+      const startY = BASE_Y - 20 - (startStackHeight+1) * DISK_HEIGHT;
+      const endY = BASE_Y - 20 - (endStackHeight+1) * DISK_HEIGHT;
+      const liftY = BASE_Y - ROD_HEIGHT - 40;
+      const baseDuration = 700; // ms at speed=1
+      const duration = Math.max(120, baseDuration / speed);
+      const pauseAfter = Math.max(40, 160 / speed);
+      const start = performance.now();
+      const moving = {disk: disk, from: from, obj: {size, x: startX, y: startY}};
+
+      function frame(now){
+        const t = Math.min(1, (now - start) / duration);
+        const p1 = 0.28, p2 = 0.72;
+        let x, y;
+        if (t < p1){
+          const u = easeInOutQuad(t / p1);
+          x = startX; y = startY + (liftY - startY) * u;
+        } else if (t < p2){
+          const u = easeInOutQuad((t - p1) / (p2 - p1));
+          x = startX + (endX - startX) * u; y = liftY;
+        } else {
+          const u = easeInOutQuad((t - p2) / (1 - p2));
+          x = endX; y = liftY + (endY - liftY) * u;
+        }
+        moving.obj.x = x; moving.obj.y = y;
+        drawScene(moving);
+        if (t < 1) requestAnimationFrame(frame);
+        else {
+          rods[to].push(disk);
+          drawScene(null);
+          setTimeout(resolve, pauseAfter);
+        }
+      }
+      requestAnimationFrame(frame);
+    });
+  }
+
+  function updateMovesInfo(){
+    movesInfo.textContent = `Move: ${currentMoveIndex} / ${moves.length}`;
+  }
+
+  async function playFrom(index){
+    playing = true; updatePlayButton();
+    while (playing && currentMoveIndex < moves.length){
+      const speed = parseFloat(speedInput.value) || 1;
+      await animateMove(moves[currentMoveIndex], speed);
+      currentMoveIndex++;
+      updateMovesInfo();
+    }
+    if (currentMoveIndex >= moves.length){
+      playing = false; updatePlayButton();
+      await celebration();
+    }
+  }
+
+  async function stepOnce(){
+    if (currentMoveIndex < moves.length){
+      const speed = parseFloat(speedInput.value) || 1;
+      await animateMove(moves[currentMoveIndex], speed);
+      currentMoveIndex++;
+      updateMovesInfo();
+      if (currentMoveIndex >= moves.length) {
+        await celebration();
+      }
+    }
+  }
+
+  function stopPlaying(){ playing = false; updatePlayButton(); }
+
+  function updatePlayButton(){ playPauseBtn.textContent = playing ? 'Pause' : 'Play'; }
+
+  async function celebration(){
+    // pulse final stack
+    const xs = rodPositions();
+    const target = 2;
+    for (let k=0;k<6;k++){
+      const offset = (k%2===0)? -6 : 0;
+      drawScene(null);
+      const stack = rods[target];
+      for (let i=0;i<stack.length;i++){
+        const disk = stack[i];
+        const diskWidth = MIN_DISK_WIDTH + (disk-1)/Math.max(1,NUM_DISKS-1) * (MAX_DISK_WIDTH - MIN_DISK_WIDTH);
+        const x = xs[target] - diskWidth/2;
+        const y = BASE_Y - 20 - (i+1) * DISK_HEIGHT + offset;
+        ctx.save();
+        ctx.shadowColor = 'rgba(150,170,255,0.24)';
+        ctx.shadowBlur = 18;
+        drawRoundedRect(x, y, diskWidth, DISK_HEIGHT - 4, 8, 'rgba(255,255,255,0)', null);
+        ctx.restore();
+      }
+      await new Promise(r => setTimeout(r, 120));
+    }
+  }
+
+  // User actions
+  resetBtn.addEventListener('click', () => {
+    stopPlaying();
+    buildModel(parseInt(diskCountSel.value,10));
+    fitCanvas();
+    drawScene(null);
+  });
+
+  playPauseBtn.addEventListener('click', async () => {
+    if (playing){ stopPlaying(); }
+    else {
+      if (currentMoveIndex >= moves.length){ // restart
+        buildModel(parseInt(diskCountSel.value,10));
+      }
+      playFrom(currentMoveIndex);
+    }
+  });
+
+  stepBtn.addEventListener('click', async () => {
+    stopPlaying();
+    await stepOnce();
+  });
+
+  diskCountSel.addEventListener('change', () => {
+    stopPlaying();
+    buildModel(parseInt(diskCountSel.value,10));
+    fitCanvas();
+    drawScene(null);
+  });
+
+  // speed input updates subtitle for feedback
+  speedInput.addEventListener('input', () => {
+    subtitle.textContent = `Automatically plays the optimal solution — speed: ${parseFloat(speedInput.value).toFixed(2)}x`;
+  });
+
+  // keyboard: space to play/pause, right arrow to step
+  window.addEventListener('keydown', (e) => {
+    if (e.code === 'Space'){
+      e.preventDefault(); playPauseBtn.click();
+    } else if (e.code === 'ArrowRight'){
+      e.preventDefault(); stepBtn.click();
+    }
+  });
+
+  // Initialize
+  buildModel(NUM_DISKS);
+  fitCanvas();
+  drawScene(null);
+  // auto play after short delay
+  setTimeout(() => { playFrom(0); }, 700);
+
+})();
+</script>
+</body>
+</html>

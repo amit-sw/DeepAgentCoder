@@ -2,4 +2,5 @@ deepagents
 langchain
 langgraph
 langchain-core
+langchain-openai
 python-dotenv

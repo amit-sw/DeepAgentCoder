@@ -9,6 +9,25 @@ This repo is a staged series of small apps that teach how to build a coding agen
 - `apps/app_03_tests/` CLI agent with test runner and retry loop
 - `apps/app_04_final_cli/` Final CLI coding agent (full workflow)
 
+## What Changes Across App Versions (User View)
+App 01 (Minimal)
+- You run a CLI agent that explains what it would do.
+- It does not create or modify files.
+- It asks clarifying questions and then responds with a plan.
+
+App 02 (Tools + Filesystem)
+- The agent can create or update files in the current directory.
+- It still asks clarifying questions, then proceeds to edit files.
+- No tests are run.
+
+App 03 (Tests + Retry)
+- Everything in App 02.
+- The agent can run tests and fix failures based on test output.
+
+App 04 (Final CLI)
+- Everything in App 03.
+- Full coding-agent workflow with clearer summaries of changes and outcomes.
+
 ## Setup
 ```bash
 python -m venv .venv

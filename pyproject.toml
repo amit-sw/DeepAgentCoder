@@ -11,9 +11,9 @@ dependencies = [
   "langchain",
   "langgraph",
   "langchain-core",
+  "langchain-openai",
   "python-dotenv",
 ]
 
 [tool.ruff]
 line-length = 100
-

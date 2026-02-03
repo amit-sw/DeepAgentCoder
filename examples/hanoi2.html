@@ -1,0 +1,278 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Tower of Hanoi — Pastel Animation</title>
+  <style>
+    html,body{height:100%;margin:0;background:linear-gradient(180deg,#f6f8fb,#ffffff);font-family:sans-serif}
+    .wrap{height:100%;display:flex;align-items:center;justify-content:center;flex-direction:column}
+    canvas{box-shadow:0 8px 24px rgba(20,30,60,0.12);border-radius:12px}
+    h1{font-weight:600;color:#233040;margin:24px 0 8px}
+    p{margin:0;color:#445;opacity:0.8}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>Tower of Hanoi — Pastel Animation (5 disks)</h1>
+    <p>Automatically plays the optimal solution</p>
+    <canvas id="c" width="900" height="420"></canvas>
+  </div>
+
+<script>
+(() => {
+  const canvas = document.getElementById('c');
+  const ctx = canvas.getContext('2d');
+
+  // Hi-dpi support
+  function resize() {
+    const DPR = window.devicePixelRatio || 1;
+    const rect = canvas.getBoundingClientRect();
+    canvas.width = Math.floor(rect.width * DPR);
+    canvas.height = Math.floor(rect.height * DPR);
+    ctx.setTransform(DPR,0,0,DPR,0,0);
+  }
+
+  // Set a fixed CSS size but allow hi-dpi scaling
+  canvas.style.width = '900px';
+  canvas.style.height = '420px';
+  resize();
+  window.addEventListener('resize', () => {
+    // keep CSS size constant but recalc DPR if user zooms
+    resize();
+    drawScene();
+  });
+
+  // Configuration
+  const NUM_DISKS = 5;
+  const ROD_COUNT = 3;
+  const PADDING_X = 80;
+  const BASE_Y = 320;
+  const ROD_HEIGHT = 220;
+  const ROD_WIDTH = 12;
+  const DISK_HEIGHT = 28;
+  const MIN_DISK_WIDTH = 80;
+  const MAX_DISK_WIDTH = 320;
+
+  // Pastel palette (5 colors)
+  const COLORS = [
+    '#FFB3C6', // pastel pink
+    '#C8A2FF', // lavender
+    '#B3FFE0', // mint
+    '#FFF1B8', // pale yellow
+    '#B3D4FF'  // baby blue
+  ];
+
+  // Compute rod X positions
+  function rodPositions() {
+    const w = parseInt(canvas.style.width,10);
+    const gap = (w - PADDING_X*2) / (ROD_COUNT - 1);
+    const xs = [];
+    for (let i=0;i<ROD_COUNT;i++) xs.push(PADDING_X + gap*i);
+    return xs;
+  }
+
+  // Model: rods as arrays of disk sizes (1..NUM_DISKS). 1 is smallest
+  const rods = [[],[],[]];
+  for (let i = NUM_DISKS; i >= 1; i--) rods[0].push(i);
+
+  // Precompute moves for optimal solution
+  const moves = [];
+  function computeMoves(n, from, to, aux) {
+    if (n === 0) return;
+    computeMoves(n-1, from, aux, to);
+    moves.push({from, to});
+    computeMoves(n-1, aux, to, from);
+  }
+  computeMoves(NUM_DISKS, 0, 2, 1);
+
+  // Drawing helpers
+  function drawRoundedRect(x,y,w,h,r,fillStyle,strokeStyle){
+    ctx.beginPath();
+    const r2 = Math.min(r, h/2, w/2);
+    ctx.moveTo(x + r2, y);
+    ctx.arcTo(x + w, y, x + w, y + h, r2);
+    ctx.arcTo(x + w, y + h, x, y + h, r2);
+    ctx.arcTo(x, y + h, x, y, r2);
+    ctx.arcTo(x, y, x + w, y, r2);
+    ctx.closePath();
+    if (fillStyle){ ctx.fillStyle = fillStyle; ctx.fill(); }
+    if (strokeStyle){ ctx.strokeStyle = strokeStyle; ctx.stroke(); }
+  }
+
+  function drawScene(moving) {
+    const w = parseInt(canvas.style.width,10);
+    const h = parseInt(canvas.style.height,10);
+    ctx.clearRect(0,0,w,h);
+
+    // Background subtle ground
+    ctx.fillStyle = 'rgba(20,30,50,0.02)';
+    ctx.fillRect(0, BASE_Y + 40, w, 80);
+
+    // Draw base platform
+    drawRoundedRect(40, BASE_Y, w-80, 20, 8, '#efefef');
+
+    const xs = rodPositions();
+
+    // Draw rods
+    xs.forEach(x => {
+      drawRoundedRect(x - ROD_WIDTH/2, BASE_Y - ROD_HEIGHT, ROD_WIDTH, ROD_HEIGHT, ROD_WIDTH/2, '#dcdfe6');
+    });
+
+    // Draw disks per rod
+    for (let ri=0; ri<ROD_COUNT; ri++){
+      const stack = rods[ri];
+      for (let si=0; si<stack.length; si++){
+        const disk = stack[si];
+        // if this disk is currently moving, skip drawing it here
+        if (moving && moving.disk === disk && moving.from === ri) continue;
+        const diskWidth = MIN_DISK_WIDTH + (disk-1)/(NUM_DISKS-1) * (MAX_DISK_WIDTH - MIN_DISK_WIDTH);
+        const x = xs[ri] - diskWidth/2;
+        const y = BASE_Y - 20 - (si+1) * DISK_HEIGHT;
+
+        // gradient fill
+        const grad = ctx.createLinearGradient(x, y, x + diskWidth, y + DISK_HEIGHT);
+        const col = COLORS[(disk-1) % COLORS.length];
+        grad.addColorStop(0, shade(col, -8));
+        grad.addColorStop(0.5, col);
+        grad.addColorStop(1, shade(col, 6));
+
+        drawRoundedRect(x, y, diskWidth, DISK_HEIGHT - 4, 8, grad, 'rgba(0,0,0,0.06)');
+      }
+    }
+
+    // Draw moving disk (on top)
+    if (moving && moving.obj){
+      const o = moving.obj;
+      const diskWidth = MIN_DISK_WIDTH + (o.size-1)/(NUM_DISKS-1) * (MAX_DISK_WIDTH - MIN_DISK_WIDTH);
+      const x = o.x - diskWidth/2;
+      const y = o.y;
+      const grad = ctx.createLinearGradient(x, y, x + diskWidth, y + DISK_HEIGHT);
+      const col = COLORS[(o.size-1) % COLORS.length];
+      grad.addColorStop(0, shade(col, -8));
+      grad.addColorStop(0.5, col);
+      grad.addColorStop(1, shade(col, 6));
+      drawRoundedRect(x, y, diskWidth, DISK_HEIGHT - 4, 8, grad, 'rgba(0,0,0,0.08)');
+    }
+  }
+
+  // simple color shading helper (tweak hex by percent)
+  function shade(hex, percent) {
+    const f = parseInt(hex.slice(1),16);
+    const t = percent < 0 ? 0 : 255;
+    const p = Math.abs(percent)/100;
+    const R = Math.round((t - (f>>16)) * p) + (f>>16);
+    const G = Math.round((t - ((f>>8)&0x00FF)) * p) + ((f>>8)&0x00FF);
+    const B = Math.round((t - (f&0x0000FF)) * p) + (f&0x0000FF);
+    return `rgb(${R},${G},${B})`;
+  }
+
+  // Animation helpers
+  function easeInOutQuad(t){ return t<0.5 ? 2*t*t : -1 + (4-2*t)*t; }
+
+  function animateMove(move) {
+    return new Promise(resolve => {
+      const from = move.from;
+      const to = move.to;
+      // pop disk from source
+      const disk = rods[from].pop();
+      const size = disk;
+      const xs = rodPositions();
+      const startX = xs[from];
+      const endX = xs[to];
+      const startStackHeight = rods[from].length; // after pop
+      const endStackHeight = rods[to].length; // before push
+      const startY = BASE_Y - 20 - (startStackHeight+1) * DISK_HEIGHT;
+      const endY = BASE_Y - 20 - (endStackHeight+1) * DISK_HEIGHT;
+
+      // animation path: up -> horizontal -> down
+      const liftY = BASE_Y - ROD_HEIGHT - 40; // high point
+
+      const duration = 700; // ms
+      const start = performance.now();
+
+      const moving = {disk: disk, from: from, obj: {size, x: startX, y: startY}};
+
+      function frame(now){
+        const t = Math.min(1, (now - start) / duration);
+        // split into 3 phases
+        const p1 = 0.28; // lift
+        const p2 = 0.72; // horizontal
+        let x, y;
+        if (t < p1){
+          const u = easeInOutQuad(t / p1);
+          x = startX;
+          y = startY + (liftY - startY) * u;
+        } else if (t < p2){
+          const u = easeInOutQuad((t - p1) / (p2 - p1));
+          x = startX + (endX - startX) * u;
+          y = liftY;
+        } else {
+          const u = easeInOutQuad((t - p2) / (1 - p2));
+          x = endX;
+          y = liftY + (endY - liftY) * u;
+        }
+        moving.obj.x = x;
+        moving.obj.y = y;
+        drawScene(moving);
+        if (t < 1) requestAnimationFrame(frame);
+        else {
+          // push disk onto target rod
+          rods[to].push(disk);
+          drawScene(null);
+          // small pause between moves
+          setTimeout(resolve, 160);
+        }
+      }
+      requestAnimationFrame(frame);
+    });
+  }
+
+  async function runAll() {
+    for (let i=0;i<moves.length;i++){
+      await animateMove(moves[i]);
+    }
+    // final flourish: jiggle completed stack
+    await celebration();
+  }
+
+  function drawInitial(){ drawScene(null); }
+
+  function sleep(ms){ return new Promise(r=>setTimeout(r,ms)); }
+
+  async function celebration(){
+    // small pulsing of disks on final rod
+    const xs = rodPositions();
+    const target = 2;
+    for (let k=0;k<6;k++){
+      // pulse by shifting disks up a bit
+      const offset = (k%2===0)? -6 : 0;
+      // draw custom scene
+      ctx.clearRect(0,0,canvas.width,canvas.height);
+      drawScene(null);
+      // overlay a subtle glow on final stack
+      const stack = rods[target];
+      for (let i=0;i<stack.length;i++){
+        const disk = stack[i];
+        const diskWidth = MIN_DISK_WIDTH + (disk-1)/(NUM_DISKS-1) * (MAX_DISK_WIDTH - MIN_DISK_WIDTH);
+        const x = xs[target] - diskWidth/2;
+        const y = BASE_Y - 20 - (i+1) * DISK_HEIGHT + offset;
+        ctx.save();
+        ctx.shadowColor = 'rgba(150,170,255,0.24)';
+        ctx.shadowBlur = 18;
+        drawRoundedRect(x, y, diskWidth, DISK_HEIGHT - 4, 8, 'rgba(255,255,255,0)', null);
+        ctx.restore();
+      }
+      await sleep(120);
+    }
+  }
+
+  // Start
+  drawInitial();
+  // small delay then play
+  setTimeout(() => { runAll(); }, 700);
+
+})();
+</script>
+</body>
+</html>
