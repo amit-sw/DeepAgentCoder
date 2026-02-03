@@ -83,8 +83,15 @@
     const maxW = 900;
     // measure available inner width of the canvas wrapper so its padding is accounted for
     const parent = canvas.parentElement;
-    const parentInnerWidth = parent ? parent.clientWidth : window.innerWidth;
-    const containerW = Math.min(maxW, parentInnerWidth);
+    let parentInnerWidth = parent ? parent.clientWidth : window.innerWidth;
+    if (parent){
+      const ps = getComputedStyle(parent);
+      const padLeft = parseFloat(ps.paddingLeft) || 0;
+      const padRight = parseFloat(ps.paddingRight) || 0;
+      // clientWidth includes padding, so subtract it to get the actual inner space for the canvas
+      parentInnerWidth = parent.clientWidth - padLeft - padRight;
+    }
+    const containerW = Math.max(120, Math.min(maxW, parentInnerWidth));
     canvas.style.width = containerW + 'px';
     canvas.style.height = Math.round(containerW * 0.4666) + 'px'; // maintain ~900x420 ratio
     const DPR = window.devicePixelRatio || 1;
@@ -106,6 +113,7 @@
   const DISK_HEIGHT = 28;
   const MIN_DISK_WIDTH = 80;
   const MAX_DISK_WIDTH = 320;
+  const DESIGN_W = 900;
 
   // Pastel palette
   const COLORS = ['#FFB3C6','#C8A2FF','#B3FFE0','#FFF1B8','#B3D4FF'];
@@ -118,9 +126,11 @@
 
   function rodPositions() {
     const w = parseInt(canvas.style.width,10);
-    const gap = (w - PADDING_X*2) / (ROD_COUNT - 1);
+    const scale = w / DESIGN_W;
+    const padding = Math.round(PADDING_X * scale);
+    const gap = (w - padding*2) / (ROD_COUNT - 1);
     const xs = [];
-    for (let i=0;i<ROD_COUNT;i++) xs.push(PADDING_X + gap*i);
+    for (let i=0;i<ROD_COUNT;i++) xs.push(padding + gap*i);
     return xs;
   }
 
@@ -167,24 +177,38 @@
     return `rgb(${R},${G},${B})`;
   }
 
+  function diskWidthFor(disk) {
+    const w = parseInt(canvas.style.width,10);
+    const scale = w / DESIGN_W;
+    const minW = MIN_DISK_WIDTH * scale;
+    const maxW = MAX_DISK_WIDTH * scale;
+    return minW + (disk-1)/Math.max(1,NUM_DISKS-1) * (maxW - minW);
+  }
+
   function drawScene(moving) {
     const w = parseInt(canvas.style.width,10);
     const h = parseInt(canvas.style.height,10);
+    const scale = w / DESIGN_W;
+    const rodH = Math.max(30, Math.round(ROD_HEIGHT * scale));
+    const rodW = Math.max(6, Math.round(ROD_WIDTH * scale));
+    const cornerR = Math.max(4, Math.round(8 * scale));
     BASE_Y = Math.round(h * 0.76);
     ctx.clearRect(0,0,w,h);
 
     // Background subtle ground
     ctx.fillStyle = 'rgba(20,30,50,0.02)';
-    ctx.fillRect(0, BASE_Y + 24, w, h - BASE_Y - 24);
+    ctx.fillRect(0, BASE_Y + Math.round(24*scale), w, h - BASE_Y - Math.round(24*scale));
 
-    // Draw base platform
-    drawRoundedRect(40, BASE_Y, w-80, 20, 8, '#efefef');
+    // Draw base platform (scale margins/radius)
+    const baseLeft = Math.round(40 * scale);
+    const baseW = w - baseLeft*2;
+    drawRoundedRect(baseLeft, BASE_Y, baseW, Math.max(10, Math.round(20*scale)), Math.max(4, Math.round(8*scale)), '#efefef');
 
     const xs = rodPositions();
 
     // Draw rods
     xs.forEach(x => {
-      drawRoundedRect(x - ROD_WIDTH/2, BASE_Y - ROD_HEIGHT, ROD_WIDTH, ROD_HEIGHT, ROD_WIDTH/2, '#dcdfe6');
+      drawRoundedRect(x - rodW/2, BASE_Y - rodH, rodW, rodH, Math.max(2, Math.round(rodW/2)), '#dcdfe6');
     });
 
     // Draw disks per rod
@@ -193,29 +217,29 @@
       for (let si=0; si<stack.length; si++){
         const disk = stack[si];
         if (moving && moving.disk === disk && moving.from === ri) continue;
-        const diskWidth = MIN_DISK_WIDTH + (disk-1)/Math.max(1,NUM_DISKS-1) * (MAX_DISK_WIDTH - MIN_DISK_WIDTH);
+        const diskWidth = diskWidthFor(disk);
         const x = xs[ri] - diskWidth/2;
-        const y = BASE_Y - 20 - (si+1) * DISK_HEIGHT;
-        const grad = ctx.createLinearGradient(x, y, x + diskWidth, y + DISK_HEIGHT);
+        const y = BASE_Y - Math.round(20 * scale) - (si+1) * (Math.round(DISK_HEIGHT * scale));
+        const grad = ctx.createLinearGradient(x, y, x + diskWidth, y + Math.round(DISK_HEIGHT * scale));
         const col = COLORS[(disk-1) % COLORS.length];
         grad.addColorStop(0, shade(col, -8));
         grad.addColorStop(0.5, col);
         grad.addColorStop(1, shade(col, 6));
-        drawRoundedRect(x, y, diskWidth, DISK_HEIGHT - 4, 8, grad, 'rgba(0,0,0,0.06)');
+        drawRoundedRect(x, y, diskWidth, Math.max(8, Math.round(DISK_HEIGHT * scale)) - 4, cornerR, grad, 'rgba(0,0,0,0.06)');
       }
     }
 
     if (moving && moving.obj){
       const o = moving.obj;
-      const diskWidth = MIN_DISK_WIDTH + (o.size-1)/Math.max(1,NUM_DISKS-1) * (MAX_DISK_WIDTH - MIN_DISK_WIDTH);
+      const diskWidth = diskWidthFor(o.size);
       const x = o.x - diskWidth/2;
       const y = o.y;
-      const grad = ctx.createLinearGradient(x, y, x + diskWidth, y + DISK_HEIGHT);
+      const grad = ctx.createLinearGradient(x, y, x + diskWidth, y + Math.round(DISK_HEIGHT * scale));
       const col = COLORS[(o.size-1) % COLORS.length];
       grad.addColorStop(0, shade(col, -8));
       grad.addColorStop(0.5, col);
       grad.addColorStop(1, shade(col, 6));
-      drawRoundedRect(x, y, diskWidth, DISK_HEIGHT - 4, 8, grad, 'rgba(0,0,0,0.08)');
+      drawRoundedRect(x, y, diskWidth, Math.max(8, Math.round(DISK_HEIGHT * scale)) - 4, cornerR, grad, 'rgba(0,0,0,0.08)');
     }
   }
 
@@ -228,13 +252,16 @@
       const disk = rods[from].pop();
       const size = disk;
       const xs = rodPositions();
+      const w = parseInt(canvas.style.width,10);
+      const scale = w / DESIGN_W;
+      const rodH = Math.max(30, Math.round(ROD_HEIGHT * scale));
       const startX = xs[from];
       const endX = xs[to];
       const startStackHeight = rods[from].length;
       const endStackHeight = rods[to].length;
-      const startY = BASE_Y - 20 - (startStackHeight+1) * DISK_HEIGHT;
-      const endY = BASE_Y - 20 - (endStackHeight+1) * DISK_HEIGHT;
-      const liftY = BASE_Y - ROD_HEIGHT - 40;
+      const startY = BASE_Y - Math.round(20 * scale) - (startStackHeight+1) * (Math.round(DISK_HEIGHT * scale));
+      const endY = BASE_Y - Math.round(20 * scale) - (endStackHeight+1) * (Math.round(DISK_HEIGHT * scale));
+      const liftY = BASE_Y - rodH - Math.round(40 * scale);
       const baseDuration = 700; // ms at speed=1
       const duration = Math.max(120, baseDuration / speed);
       const pauseAfter = Math.max(40, 160 / speed);
@@ -306,19 +333,21 @@
     // pulse final stack
     const xs = rodPositions();
     const target = 2;
+    const w = parseInt(canvas.style.width,10);
+    const scale = w / DESIGN_W;
     for (let k=0;k<6;k++){
       const offset = (k%2===0)? -6 : 0;
       drawScene(null);
       const stack = rods[target];
       for (let i=0;i<stack.length;i++){
         const disk = stack[i];
-        const diskWidth = MIN_DISK_WIDTH + (disk-1)/Math.max(1,NUM_DISKS-1) * (MAX_DISK_WIDTH - MIN_DISK_WIDTH);
+        const diskWidth = diskWidthFor(disk);
         const x = xs[target] - diskWidth/2;
-        const y = BASE_Y - 20 - (i+1) * DISK_HEIGHT + offset;
+        const y = BASE_Y - Math.round(20 * scale) - (i+1) * (Math.round(DISK_HEIGHT * scale)) + offset;
         ctx.save();
         ctx.shadowColor = 'rgba(150,170,255,0.24)';
         ctx.shadowBlur = 18;
-        drawRoundedRect(x, y, diskWidth, DISK_HEIGHT - 4, 8, 'rgba(255,255,255,0)', null);
+        drawRoundedRect(x, y, diskWidth, Math.max(8, Math.round(DISK_HEIGHT * scale)) - 4, Math.max(4, Math.round(8 * scale)), 'rgba(255,255,255,0)', null);
         ctx.restore();
       }
       await new Promise(r => setTimeout(r, 120));
