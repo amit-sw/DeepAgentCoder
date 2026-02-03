@@ -8,6 +8,8 @@ from langchain_core.tools import tool
 
 
 def _safe_cwd(root_dir: Path, cwd: str) -> Path:
+    if cwd.startswith("/"):
+        cwd = cwd.lstrip("/")
     resolved = (root_dir / cwd).resolve()
     if root_dir not in resolved.parents and resolved != root_dir:
         raise ValueError(f"cwd must be inside {root_dir}")

@@ -8,12 +8,12 @@
     :root{--bg1:#f6f8fb;--bg2:#ffffff;--card:#fff;--muted:#6b7280;--accent:#7b9cff}
     html,body{height:100%;margin:0;background:linear-gradient(180deg,var(--bg1),var(--bg2));font-family:Inter, ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial}
     .wrap{min-height:100%;display:flex;align-items:center;justify-content:center;flex-direction:column;padding:28px}
-    .canvasWrap{padding:18px;background:linear-gradient(180deg,rgba(255,255,255,0.8),rgba(248,250,252,0.9));border-radius:14px;box-shadow:0 12px 30px rgba(18,30,70,0.08)}
-    canvas{display:block;border-radius:10px}
+    .canvasWrap{padding:18px;background:linear-gradient(180deg,rgba(255,255,255,0.8),rgba(248,250,252,0.9));border-radius:14px;box-shadow:0 12px 30px rgba(18,30,70,0.08);width:100%;max-width:900px;box-sizing:border-box}
+    canvas{display:block;border-radius:10px;width:100%;height:auto;max-width:900px;aspect-ratio:900/420;box-sizing:border-box}
     h1{font-weight:600;color:#233040;margin:8px 0}
     p{margin:0;color:var(--muted);opacity:0.95}
 
-    .controls{display:flex;align-items:center;justify-content:space-between;width:900px;max-width:calc(100% - 40px);margin:12px 0}
+    .controls{display:flex;align-items:center;justify-content:space-between;width:100%;max-width:900px;margin:12px 0}
     .controls .left,.controls .right{display:flex;align-items:center;gap:8px}
     select,input[type=range]{margin-left:8px}
     button{background:#fff;border:1px solid #e6e9ef;padding:8px 12px;border-radius:8px;cursor:pointer;box-shadow:0 2px 6px rgba(20,30,60,0.04)}
@@ -49,6 +49,14 @@
       <div class="right">
         <label>Speed:
           <input id="speed" type="range" min="0.25" max="2" step="0.05" value="1">
+        </label>
+        <label>Disk Shrink:
+          <input id="diskShrink" type="range" min="0.5" max="1.5" step="0.01" value="1">
+          <span id="diskShrinkVal">1.00x</span>
+        </label>
+        <label>Rod Shift:
+          <input id="rodShift" type="range" min="0.5" max="1.5" step="0.01" value="1">
+          <span id="rodShiftVal">1.00x</span>
         </label>
         <div class="info">
           <div id="movesInfo">Move: 0 / 0</div>
@@ -107,6 +115,8 @@
   let NUM_DISKS = parseInt(diskCountSel.value, 10) || 5;
   const ROD_COUNT = 3;
   const PADDING_X = 80;
+  // Reduce disk visual size slightly to avoid clipping against rounded canvas corners
+  const DISK_SIZE_FACTOR = 0.90; // 0.90 == 10% smaller
   let BASE_Y = 320; // recalculated below based on canvas height
   const ROD_HEIGHT = 220;
   const ROD_WIDTH = 12;
@@ -114,6 +124,30 @@
   const MIN_DISK_WIDTH = 80;
   const MAX_DISK_WIDTH = 320;
   const DESIGN_W = 900;
+
+  // Adaptive UI controls (default 1, range 0.5 - 1.5)
+  const diskShrinkInput = document.getElementById('diskShrink');
+  const rodShiftInput = document.getElementById('rodShift');
+  const diskShrinkVal = document.getElementById('diskShrinkVal');
+  const rodShiftVal = document.getElementById('rodShiftVal');
+
+  // current multipliers
+  let diskShrink = 1.0; // multiplies disk width
+  let rodShift = 1.0;   // multiplies horizontal spacing
+
+  // apply UI -> variables and reflect text
+  function updateControlsFromInputs(){
+    diskShrink = parseFloat(diskShrinkInput.value) || 1.0;
+    rodShift = parseFloat(rodShiftInput.value) || 1.0;
+    diskShrinkVal.textContent = diskShrink.toFixed(2) + 'x';
+    rodShiftVal.textContent = rodShift.toFixed(2) + 'x';
+  }
+
+  diskShrinkInput.addEventListener('input', () => { updateControlsFromInputs(); drawScene(null); });
+  rodShiftInput.addEventListener('input', () => { updateControlsFromInputs(); drawScene(null); });
+
+  // initialize labels
+  updateControlsFromInputs();
 
   // Pastel palette
   const COLORS = ['#FFB3C6','#C8A2FF','#B3FFE0','#FFF1B8','#B3D4FF'];
@@ -127,10 +161,17 @@
   function rodPositions() {
     const w = parseInt(canvas.style.width,10);
     const scale = w / DESIGN_W;
-    const padding = Math.round(PADDING_X * scale);
-    const gap = (w - padding*2) / (ROD_COUNT - 1);
+    // Move poles slightly toward the center to avoid disks touching rounded corners
+    const basePadding = Math.round(PADDING_X * scale * 1.1); // 10% more padding
+    // rodShift adapts the spacing between rods; >1 pushes rods outward, <1 brings them closer
+    // We blend the shift with scale to avoid extreme positions on very small screens
+    const effectivePadding = Math.round(basePadding * (1 + (1-rodShift) * 0.6));
+    const gap = (w - effectivePadding*2) / (ROD_COUNT - 1) * rodShift;
+    // center the group of rods
+    const groupWidth = gap * (ROD_COUNT - 1);
+    const startX = Math.round((w - groupWidth) / 2);
     const xs = [];
-    for (let i=0;i<ROD_COUNT;i++) xs.push(padding + gap*i);
+    for (let i=0;i<ROD_COUNT;i++) xs.push(startX + gap*i);
     return xs;
   }
 
@@ -182,7 +223,11 @@
     const scale = w / DESIGN_W;
     const minW = MIN_DISK_WIDTH * scale;
     const maxW = MAX_DISK_WIDTH * scale;
-    return minW + (disk-1)/Math.max(1,NUM_DISKS-1) * (maxW - minW);
+    const base = minW + (disk-1)/Math.max(1,NUM_DISKS-1) * (maxW - minW);
+    // diskShrink modifies width in range 0.5..1.5 and we clamp to avoid overflow
+    const shrunk = base * DISK_SIZE_FACTOR * diskShrink;
+    const maxAllowed = w * 0.9; // never exceed 90% of canvas width
+    return Math.min(shrunk, maxAllowed);
   }
 
   function drawScene(moving) {
@@ -259,6 +304,9 @@
       const endX = xs[to];
       const startStackHeight = rods[from].length;
       const endStackHeight = rods[to].length;
+      // Adjust start/end X to account for disk width differences so disk visually centers on pole
+      const startDiskW = diskWidthFor(disk);
+      const endDiskW = diskWidthFor(disk);
       const startY = BASE_Y - Math.round(20 * scale) - (startStackHeight+1) * (Math.round(DISK_HEIGHT * scale));
       const endY = BASE_Y - Math.round(20 * scale) - (endStackHeight+1) * (Math.round(DISK_HEIGHT * scale));
       const liftY = BASE_Y - rodH - Math.round(40 * scale);
