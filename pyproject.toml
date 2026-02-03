@@ -1,0 +1,19 @@
+[project]
+name = "deepagentcoder"
+version = "0.1.0"
+description = "Teaching series for building a coding agent with DeepAgents"
+requires-python = ">=3.10"
+readme = "README.md"
+license = { text = "MIT" }
+
+dependencies = [
+  "deepagents",
+  "langchain",
+  "langgraph",
+  "langchain-core",
+  "python-dotenv",
+]
+
+[tool.ruff]
+line-length = 100
+
