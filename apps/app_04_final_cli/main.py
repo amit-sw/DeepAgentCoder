@@ -8,7 +8,7 @@ from agent_core import Stage, run_interactive_cli  # noqa: E402
 
 
 def main() -> None:
-    run_interactive_cli(stage=Stage.FINAL, model=None)
+    run_interactive_cli(stage=Stage.FINAL, model=None, loop=True)
 
 
 if __name__ == "__main__":

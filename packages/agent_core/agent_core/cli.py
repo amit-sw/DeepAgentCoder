@@ -40,6 +40,7 @@ def run_interactive_cli(
     test_command: Optional[str] = None,
     allow_any_test_command: bool = False,
     enable_tests: bool = True,
+    loop: bool = False,
 ) -> None:
     load_dotenv(find_dotenv(usecwd=True))
     root_dir = Path.cwd().resolve()
@@ -61,50 +62,56 @@ def run_interactive_cli(
     )
 
     while True:
-        user_prompt = input("What do you want to build?\n> ").strip()
-        if not user_prompt:
-            continue
-        if user_prompt.lower() == "/help":
-            print(help_text)
-            continue
-        if user_prompt.lower() == "/quit":
-            print("Exiting.")
-            return
-        break
+        while True:
+            user_prompt = input("What do you want to build?\n> ").strip()
+            if not user_prompt:
+                continue
+            if user_prompt.lower() == "/help":
+                print(help_text)
+                continue
+            if user_prompt.lower() == "/quit":
+                print("Exiting.")
+                return
+            break
 
-    clarifications = _collect_clarifications(user_prompt, model)
+        clarifications = _collect_clarifications(user_prompt, model)
 
-    config = default_config(stage=stage, root_dir=root_dir, model=model)
-    if not enable_tests:
-        config.test_command = None
-    elif test_command:
-        config.test_command = test_command
-    config.allow_any_test_command = allow_any_test_command
+        config = default_config(stage=stage, root_dir=root_dir, model=model)
+        if not enable_tests:
+            config.test_command = None
+        elif test_command:
+            config.test_command = test_command
+        config.allow_any_test_command = allow_any_test_command
 
-    plan = (
-        "Plan: analyze requirements, update files under the current directory, "
-        "and summarize what changed."
-    )
-    if stage in {Stage.TESTS, Stage.FINAL} and config.test_command:
         plan = (
             "Plan: analyze requirements, update files under the current directory, "
-            f"run tests with `{config.test_command}`, fix failures if any, "
             "and summarize what changed."
         )
+        if stage in {Stage.TESTS, Stage.FINAL} and config.test_command:
+            plan = (
+                "Plan: analyze requirements, update files under the current directory, "
+                f"run tests with `{config.test_command}`, fix failures if any, "
+                "and summarize what changed."
+            )
 
-    print(plan)
+        print(plan)
 
-    context = (
-        "You must only read/write files inside the current working directory. "
-        "Summarize changes with a short bullet list of files touched."
-    )
-    combined_prompt = f"{user_prompt}\n\nClarifications:\n{clarifications}"
+        context = (
+            "You must only read/write files inside the current working directory. "
+            "Summarize changes with a short bullet list of files touched."
+        )
+        combined_prompt = f"{user_prompt}\n\nClarifications:\n{clarifications}"
 
-    orchestrator = AgentOrchestrator(config)
-    result = orchestrator.run_task(TaskRequest(prompt=combined_prompt, context=context))
+        orchestrator = AgentOrchestrator(config)
+        result = orchestrator.run_task(
+            TaskRequest(prompt=combined_prompt, context=context)
+        )
 
-    print("\n=== Agent Response ===")
-    print(result.answer)
+        print("\n=== Agent Response ===")
+        print(result.answer)
+
+        if not loop:
+            return
 
 
 def _collect_clarifications(user_prompt: str, model: Optional[str]) -> str:
